@@ -184,7 +184,7 @@ class MimicParser(object):
        
         ''' This will filter out rows from CHARTEVENTS.csv that are not feauture relevant '''
  
-        #CHARTEVENTS = 330712484 
+        #CHARTEVENTS = 330712484, 15
 
         pid = ParseItemID()
         pid.build_dictionary()
@@ -195,42 +195,67 @@ class MimicParser(object):
         for i, df_chunk in enumerate(pd.read_csv(filepath, iterator=True, chunksize=chunksize)):
             function = lambda x,y: x.union(y)
             df = df_chunk[df_chunk['ITEMID'].isin(reduce(function, pid.dictionary.values()))]
+            print('Before dropping NA', df.shape)
             df.dropna(inplace=True, axis=0, subset=columns)
+            print('After dropping NA', df.shape)
             if i == 0:
-                df.to_csv(ROOT + './mapped_elements/CHARTEVENTS_reduced.csv', index=False, 
+                df.to_csv(ROOT + './mapped_elements/CHARTEVENTS_reduced.csv', index=False,
                           columns=columns)
                 print(i)
             else:
                 df.to_csv(ROOT + './mapped_elements/CHARTEVENTS_reduced.csv', index=False,
                           columns=columns, header=None, mode='a')
                 print(i)
-            
+
+    def add_day_features(self, file_name):
+
+        pid = ParseItemID()
+        pid.build_dictionary()
+        pid.reverse_dictionary(pid.dictionary)
+        chunksize = 10000000
+        columns = ['SUBJECT_ID', 'HADM_ID', 'ICUSTAY_ID', 'ITEMID', 'CHARTTIME', 'VALUE',
+                   'VALUENUM', 'CHARTDAY', 'HADMID_DAY', 'FEATURES']
+
+        for i, df in enumerate(pd.read_csv(file_name, iterator=True, chunksize=chunksize)):
+            df['CHARTDAY'] = df['CHARTTIME'].astype('str').str.split(' ').apply(lambda x: x[0])
+            df['HADMID_DAY'] = df['HADM_ID'].astype('str') + '_' + df['CHARTDAY']
+            df['FEATURES'] = df['ITEMID'].apply(lambda x: pid.rev[x])
+            print('Shape', df.shape)
+            if i == 0:
+                df.to_csv(ROOT + './mapped_elements/CHARTEVENTS_reduced_day_features.csv', index=False,
+                          columns=columns)
+                print(i)
+            else:
+                df.to_csv(ROOT + './mapped_elements/CHARTEVENTS_reduced_day_features.csv', index=False,
+                          columns=columns, header=None, mode='a')
+                print(i)
+
     def map_files(self, shard_number, filename, low_memory=False):
-        
-        ''' HADM minimum is 100001 and maximum is 199999. Shards are built off of those. 
-            See if can update based on removing rows from previous buckets to accelerate 
-            speed (each iteration 10% faster) This may not be necessary of reduce total 
+
+        ''' HADM minimum is 100001 and maximum is 199999. Shards are built off of those.
+            See if can update based on removing rows from previous buckets to accelerate
+            speed (each iteration 10% faster) This may not be necessary of reduce total
             works well (there are few features)  '''
 
         buckets = []
         beg = 100001
         end = 199999
         interval = math.ceil((end - beg)/float(shard_number))
-       
+
         for i in np.arange(shard_number):
             buckets.append(set(np.arange(beg+(i*interval),beg+(interval+(interval*i)))))
 
         if low_memory==False:
-            
-    
+
+
             for i in range(len(buckets)):
                 for i,chunk in enumerate(pd.read_csv(filename, iterator=True,
                                                      chunksize=10000000)):
                     print(buckets[i])
                     print(chunk['HADM_ID'].isin(buckets[i]))
-                    sliced = chunk[chunk['HADM_ID'].astype('int').isin(buckets[i])] 
+                    sliced = chunk[chunk['HADM_ID'].astype('int').isin(buckets[i])]
                     sliced.to_csv(ROOT + 'mapped_elements/shard_{0}.csv'.format(i), index=False)
-                
+
         else:
 
             for i in range(len(buckets)):
@@ -246,7 +271,7 @@ class MimicParser(object):
                             except ValueError as e:
                                 print(row)
                                 print(e)
-                         
+
     def create_day_blocks(self, file_name):
 
         ''' Uses pandas to take shards and build them out '''
@@ -255,20 +280,19 @@ class MimicParser(object):
         pid.build_dictionary()
         pid.reverse_dictionary(pid.dictionary)
         df = pd.read_csv(file_name)
-        df['CHARTDAY'] = df['CHARTTIME'].astype('str').str.split(' ').apply(lambda x: x[0])
-        df['HADMID_DAY'] = df['HADM_ID'].astype('str') + '_' + df['CHARTDAY']
-        df['FEATURES'] = df['ITEMID'].apply(lambda x: pid.rev[x])
+        print("Reduced Shape:", df.shape)
+        print("Reduced Columns:", df.columns)
         self.hadm_dict = dict(zip(df['HADMID_DAY'], df['SUBJECT_ID']))
         df2 = pd.pivot_table(df, index='HADMID_DAY', columns='FEATURES',
                              values='VALUENUM', fill_value=np.nan)
         df3 = pd.pivot_table(df, index='HADMID_DAY', columns='FEATURES',
-                             values='VALUENUM', aggfunc=np.std, fill_value=0)
+                             values='VALUENUM', dropna=False, aggfunc="std", fill_value=0)
         df3.columns = ["{0}_std".format(i) for i in list(df2.columns)]
         df4 = pd.pivot_table(df, index='HADMID_DAY', columns='FEATURES',
-                             values='VALUENUM', aggfunc=np.amin, fill_value=np.nan)
+                             values='VALUENUM', aggfunc="min", fill_value=np.nan)
         df4.columns = ["{0}_min".format(i) for i in list(df2.columns)]
         df5 = pd.pivot_table(df, index='HADMID_DAY', columns='FEATURES',
-                             values='VALUENUM', aggfunc=np.amax, fill_value=np.nan)
+                             values='VALUENUM', aggfunc="max", fill_value=np.nan)
         df5.columns = ["{0}_max".format(i) for i in list(df2.columns)]
         df2 = pd.concat([df2, df3, df4, df5], axis=1)
         df2['tobacco'].apply(lambda x: np.around(x))
@@ -297,24 +321,28 @@ class MimicParser(object):
 
         for i in list(df2.columns):
             df2[i].fillna(df2[i].median(), inplace=True)
-            
+
         df2['HADMID_DAY'] = df2.index
-        df2['INR'] = df2['INR'] + df2['PT']  
-        df2['INR_std'] = df2['INR_std'] + df2['PT_std']  
-        df2['INR_min'] = df2['INR_min'] + df2['PT_min']  
-        df2['INR_max'] = df2['INR_max'] + df2['PT_max']  
+        df2['INR'] = df2['INR'] + df2['PT']
+        df2['INR_std'] = df2['INR_std'] + df2['PT_std']
+        df2['INR_min'] = df2['INR_min'] + df2['PT_min']
+        df2['INR_max'] = df2['INR_max'] + df2['PT_max']
         del df2['PT']
         del df2['PT_std']
         del df2['PT_min']
         del df2['PT_max']
         df2.dropna(thresh=int(0.75*len(df2.columns)), axis=0, inplace=True)
+        print("24_hour_blocks Shape:", df2.shape)
+        print("24_hour_blocks Columns:", df2.columns)
         df2.to_csv(file_name[0:-4] + '_24_hour_blocks.csv', index=False)
 
     def add_admissions_columns(self, file_name):
-        
+
         ''' Add demographic columns to create_day_blocks '''
 
         df = pd.read_csv('./mimic_database/ADMISSIONS.csv')
+        print("ADMISSIONS Shape:", df.shape)
+        print("ADMISSIONS Columns:", df.columns)
         ethn_dict = dict(zip(df['HADM_ID'], df['ETHNICITY']))
         admittime_dict = dict(zip(df['HADM_ID'], df['ADMITTIME']))
         df_shard = pd.read_csv(file_name)
@@ -324,63 +352,76 @@ class MimicParser(object):
         black_condition = df_shard['ETHNICITY'].str.contains('.*black.*', flags=re.IGNORECASE)
         df_shard['BLACK'] = 0
         df_shard['BLACK'][black_condition] = 1
-        del df_shard['ETHNICITY'] 
+        del df_shard['ETHNICITY']
         df_shard['ADMITTIME'] = df_shard['HADM_ID'].apply(lambda x: map_dict(x, admittime_dict))
+        print("plus_admissions Shape:", df_shard.shape)
+        print("plus_admissions Columns:", df_shard.columns)
         df_shard.to_csv(file_name[0:-4] + '_plus_admissions.csv', index=False)
-                
+
     def add_patient_columns(self, file_name):
-        
+
         ''' Add demographic columns to create_day_blocks '''
 
+        df_reduced_data = pd.read_csv(ROOT + FOLDER + FILE_STR + '.csv')
+        self.hadm_dict = dict(zip(df_reduced_data['HADMID_DAY'], df_reduced_data['SUBJECT_ID']))
+
         df = pd.read_csv('./mimic_database/PATIENTS.csv')
+        print("PATIENTS Shape:", df.shape)
+        print("PATIENTS Columns:", df.columns)
 
         dob_dict = dict(zip(df['SUBJECT_ID'], df['DOB']))
         gender_dict = dict(zip(df['SUBJECT_ID'], df['GENDER']))
         df_shard = pd.read_csv(file_name)
+
         df_shard['SUBJECT_ID'] = df_shard['HADMID_DAY'].apply(lambda x:
                                                                map_dict(x, self.hadm_dict))
         df_shard['DOB'] = df_shard['SUBJECT_ID'].apply(lambda x: map_dict(x, dob_dict))
 
         df_shard['YOB'] = df_shard['DOB'].str.split('-').apply(lambda x: x[0]).astype('int')
-        df_shard['ADMITYEAR'] = df_shard['ADMITTIME'].str.split('-').apply(lambda x: x[0]).astype('int') 
-        
-        df_shard['AGE'] = df_shard['ADMITYEAR'].subtract(df_shard['YOB']) 
+        df_shard['ADMITYEAR'] = df_shard['ADMITTIME'].str.split('-').apply(lambda x: x[0]).astype('int')
+
+        df_shard['AGE'] = df_shard['ADMITYEAR'].subtract(df_shard['YOB'])
         df_shard['GENDER'] = df_shard['SUBJECT_ID'].apply(lambda x: map_dict(x, gender_dict))
         gender_dummied = pd.get_dummies(df_shard['GENDER'], drop_first=True)
         gender_dummied.rename(columns={'M': 'Male', 'F': 'Female'})
         COLUMNS = list(df_shard.columns)
         COLUMNS.remove('GENDER')
         df_shard = pd.concat([df_shard[COLUMNS], gender_dummied], axis=1)
+        print("plus_patients Shape:", df_shard.shape)
+        print("plus_patients Columns:", df_shard.columns)
         df_shard.to_csv(file_name[0:-4] + '_plus_patients.csv', index=False)
 
     def clean_prescriptions(self, file_name):
-        
+
         ''' Add prescriptions '''
 
         pid = ParseItemID()
-        pid.prescriptions_init()        
+        pid.prescriptions_init()
         pid.prescriptions.drop_duplicates(inplace=True)
         pid.prescriptions['DRUG_FEATURE'] = np.nan
 
         df_file = pd.read_csv(file_name)
+        print("clean prescriptions Shape:", df_file.shape)
+        print("clean prescriptions Columns:", df_file.columns)
         hadm_id_array = pd.unique(df_file['HADM_ID'])
 
         for feature, pattern in zip(pid.script_features_names, pid.script_patterns):
            condition = pid.prescriptions['DRUG'].str.contains(pattern, flags=re.IGNORECASE)
            pid.prescriptions['DRUG_FEATURE'][condition] = feature
 
-        pid.prescriptions.dropna(how='any', axis=0, inplace=True, subset=['DRUG_FEATURE']) 
+        pid.prescriptions.dropna(how='any', axis=0, inplace=True, subset=['DRUG_FEATURE'])
+
+        print("clean PRESCRIPTIONS_reduced Shape:", pid.prescriptions.shape)
+        print("clean PRESCRIPTIONS_reduced Columns:", pid.prescriptions.columns)
 
         pid.prescriptions.to_csv('./mimic_database/PRESCRIPTIONS_reduced.csv', index=False)
-        
-    def add_prescriptions(self, file_name):
-       
-        df_file = pd.read_csv(file_name)
 
+
+    def create_prescription_byday(self):
         with open('./mimic_database/PRESCRIPTIONS_reduced.csv', 'r') as f:
             csvreader = csv.reader(f)
             with open('./mimic_database/PRESCRIPTIONS_reduced_byday.csv', 'w') as g:
-                csvwriter  = csv.writer(g)
+                csvwriter = csv.writer(g)
                 first_line = csvreader.__next__()
                 print(first_line[0:3] + ['CHARTDAY'] + [first_line[6]])
                 csvwriter.writerow(first_line[0:3] + ['CHARTDAY'] + [first_line[6]])
@@ -388,25 +429,32 @@ class MimicParser(object):
                     for i in pd.date_range(row[3], row[4]).strftime('%Y-%m-%d'):
                         csvwriter.writerow(row[0:3] + [i] + [row[6]])
 
+    def add_prescriptions(self, file_name):
+
+        df_file = pd.read_csv(file_name)
         df = pd.read_csv('./mimic_database/PRESCRIPTIONS_reduced_byday.csv')
+
         df['CHARTDAY'] = df['CHARTDAY'].str.split(' ').apply(lambda x: x[0])
         df['HADMID_DAY'] = df['HADM_ID'].astype('str') + '_' + df['CHARTDAY']
-        df['VALUE'] = 1        
+        df['VALUE'] = 1
 
         cols = ['HADMID_DAY', 'DRUG_FEATURE', 'VALUE']
-        df = df[cols] 
- 
+        df = df[cols]
+
         df_pivot = pd.pivot_table(df, index='HADMID_DAY', columns='DRUG_FEATURE', values='VALUE', fill_value=0, aggfunc=np.amax)
         df_pivot.reset_index(inplace=True)
 
         df_merged = pd.merge(df_file, df_pivot, on='HADMID_DAY', how='outer')
- 
+
         del df_merged['HADM_ID']
         df_merged['HADM_ID'] = df_merged['HADMID_DAY'].str.split('_').apply(lambda x: x[0])
         df_merged.fillna(0, inplace=True)
 
         df_merged['dextrose'] = df_merged['dextrose'] + df_merged['D5W']
         del df_merged['D5W']
+
+        print("_plus_scripts Shape:", df_merged.shape)
+        print("_plus_scripts Columns:", df_merged.columns)
 
         df_merged.to_csv(file_name[0:-4] + '_plus_scripts.csv', index=False)
 
@@ -416,16 +464,22 @@ class MimicParser(object):
         df_micro = pd.read_csv('./mimic_database/MICROBIOLOGYEVENTS.csv')
         self.suspect_hadmid = set(pd.unique(df_micro['HADM_ID']).tolist())
         df_icd_ckd = df_icd[df_icd['ICD9_CODE'] == 585]
-        
+
         self.ckd = set(df_icd_ckd['HADM_ID'].values.tolist())
-        
+
         df = pd.read_csv(file_name)
+        print("Start of add_icd_infect file shape:", df.shape)
+        print("Start of add_icd_infect file Columns:", df.columns)
         df['CKD'] = df['HADM_ID'].apply(lambda x: 1 if x in self.ckd else 0)
         df['Infection'] = df['HADM_ID'].apply(lambda x: 1 if x in self.suspect_hadmid else 0)
+        print("_plus_icds shape:", df.shape)
+        print("_plus_icds Columns:", df.columns)
         df.to_csv(file_name[0:-4] + '_plus_icds.csv', index=False)
 
     def add_notes(self, file_name):
         df = pd.read_csv('./mimic_database/NOTEEVENTS.csv')
+        print("Start of add_notes file shape:", df.shape)
+        print("Start of add_notes file Columns:", df.columns)
         df_rad_notes = df[['TEXT', 'HADM_ID']][df['CATEGORY'] == 'Radiology']
         CTA_bool_array = df_rad_notes['TEXT'].str.contains('CTA', flags=re.IGNORECASE)
         CT_angiogram_bool_array = df_rad_notes['TEXT'].str.contains('CT angiogram', flags=re.IGNORECASE)
@@ -438,9 +492,11 @@ class MimicParser(object):
         print(len(hadm_id_set))
         hadm_id_set.update(chest_angiogram_hadm_ids)
         print(len(hadm_id_set))
-        
+
         df2 = pd.read_csv(file_name)
         df2['ct_angio'] = df2['HADM_ID'].apply(lambda x: 1 if x in hadm_id_set else 0)
+        print("_plus_notes shape:", df.shape)
+        print("_plus_notes Columns:", df.columns)
         df2.to_csv(file_name[0:-4] + '_plus_notes.csv', index=False)
 
 if __name__ == '__main__':
@@ -448,18 +504,20 @@ if __name__ == '__main__':
     pid = ParseItemID()
     pid.build_dictionary()
     FOLDER = 'mapped_elements/'
-    FILE_STR = 'CHARTEVENTS_reduced'
+    FILE_STR = 'CHARTEVENTS_reduced_day_features'
     mp = MimicParser()
 
-#    mp.reduce_total(ROOT + 'CHARTEVENTS.csv')
-#    mp.create_day_blocks(ROOT+ FOLDER + FILE_STR + '.csv')
-#    mp.add_admissions_columns(ROOT + FOLDER + FILE_STR + '_24_hour_blocks.csv')
-#    mp.add_patient_columns(ROOT + FOLDER + FILE_STR + '_24_hour_blocks_plus_admissions.csv')
-    mp.clean_prescriptions(ROOT + FOLDER + FILE_STR + 
-                         '_24_hour_blocks_plus_admissions_plus_patients.csv')
-    mp.add_prescriptions(ROOT + FOLDER + FILE_STR + 
-                         '_24_hour_blocks_plus_admissions_plus_patients.csv')
-    mp.add_icd_infect(ROOT + FOLDER + FILE_STR + '_24_hour_blocks_plus_admissions_plus_patients_plus_scripts.csv') 
-    mp.add_notes(ROOT + FOLDER + FILE_STR + '_24_hour_blocks_plus_admissions_plus_patients_plus_scripts_plus_icds.csv')    
+    # mp.reduce_total(ROOT + 'CHARTEVENTS.csv')
+ #   mp.add_day_features(ROOT + 'mapped_elements/CHARTEVENTS_reduced.csv')
+    # mp.create_day_blocks(ROOT+ FOLDER + FILE_STR + '.csv')
+    #mp.add_admissions_columns(ROOT + FOLDER + FILE_STR + '_24_hour_blocks.csv')
+    #mp.add_patient_columns(ROOT + FOLDER + FILE_STR + '_24_hour_blocks_plus_admissions.csv')
+    #mp.clean_prescriptions(ROOT + FOLDER + FILE_STR +
+    #                     '_24_hour_blocks_plus_admissions_plus_patients.csv')
+    #mp.create_prescription_byday()
+    #mp.add_prescriptions(ROOT + FOLDER + FILE_STR +
+    #                     '_24_hour_blocks_plus_admissions_plus_patients.csv')
+    #mp.add_icd_infect(ROOT + FOLDER + FILE_STR + '_24_hour_blocks_plus_admissions_plus_patients_plus_scripts.csv')
+    mp.add_notes(ROOT + FOLDER + FILE_STR + '_24_hour_blocks_plus_admissions_plus_patients_plus_scripts_plus_icds.csv')
 
 

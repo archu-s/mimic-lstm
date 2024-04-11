@@ -10,10 +10,10 @@ import numpy as np
 import pandas as pd
 from pad_sequences import PadSequences
 #from processing_utilities import PandasUtilities
-from attention_function import attention_3d_block as Attention 
+#from attention_function import attention_3d_block as Attention
 
 from keras import backend as K
-from keras.models import Model, Input, load_model #model_from_json
+#from keras.models import Model, Input, load_model #model_from_json
 from keras.layers import Masking, Flatten, Embedding, Dense, LSTM, TimeDistributed
 from keras.callbacks import TensorBoard, ModelCheckpoint
 from keras.preprocessing.sequence import pad_sequences
