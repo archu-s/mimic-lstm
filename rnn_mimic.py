@@ -10,10 +10,11 @@ import numpy as np
 import pandas as pd
 from pad_sequences import PadSequences
 #from processing_utilities import PandasUtilities
-#from attention_function import attention_3d_block as Attention
+from attention_function import attention_3d_block as Attention 
 
 from keras import backend as K
-#from keras.models import Model, Input, load_model #model_from_json
+from tensorflow.keras.layers import Input
+from keras.models import Model, load_model #model_from_json
 from keras.layers import Masking, Flatten, Embedding, Dense, LSTM, TimeDistributed
 from keras.callbacks import TensorBoard, ModelCheckpoint
 from keras.preprocessing.sequence import pad_sequences
@@ -26,8 +27,8 @@ from sklearn.metrics import confusion_matrix, accuracy_score, roc_auc_score, cla
 from sklearn.metrics import recall_score, precision_score
 from sklearn.model_selection import StratifiedKFold
 
-ROOT = "./mimic_database/mapped_elements/"
-FILE = "CHARTEVENTS_reduced_24_hour_blocks_plus_admissions_plus_patients_plus_scripts_plus_icds_plus_notes.csv"
+ROOT = "/content/drive/MyDrive/Colab Notebooks/"
+FILE = "mimic_database/mapped_elements/CHARTEVENTS_reduced_day_features_24_hour_blocks_plus_admissions_plus_patients_plus_scripts_plus_icds_plus_notes.csv"
 
 ######################################
 ## MAIN ###
@@ -67,6 +68,7 @@ def temp_crit(x):
     return 1
   else:
     return 0
+
 
 def return_data(synth_data=False, balancer=True, target='MI', 
                 return_cols=False, tt_split=0.7, val_percentage=0.8,
@@ -109,7 +111,10 @@ def return_data(synth_data=False, balancer=True, target='MI',
     Y_TRAIN = np.vstack(y_train)
 
   else:
-    df = pd.read_csv(ROOT + FILE)
+    df = pd.read_csv(ROOT + FILE, nrows = 50000)
+
+    print('Dataframe Shape from the file', ROOT + FILE)
+    print(df.shape)
 
     if target == 'MI':
       df[target] = ((df['troponin'] > 0.4) & (df['CKD'] == 0)).apply(lambda x: int(x))
@@ -267,6 +272,8 @@ def return_data(synth_data=False, balancer=True, target='MI',
     return (np.concatenate((X_TRAIN,X_VAL), axis=0),
             np.concatenate((Y_TRAIN,Y_VAL), axis=0), no_feature_cols) 
 
+
+
 def build_model(no_feature_cols=None, time_steps=7, output_summary=False):
 
   """
@@ -299,6 +306,7 @@ def build_model(no_feature_cols=None, time_steps=7, output_summary=False):
     model.summary()
   return model
 
+
 def train(model_name="kaji_mach_0", synth_data=False, target='MI',
           balancer=True, predict=False, return_model=False,
           n_percentage=1.0, time_steps=14, epochs=10):
@@ -318,50 +326,52 @@ def train(model_name="kaji_mach_0", synth_data=False, target='MI',
 
   """
 
-  f = open('./pickled_objects/X_TRAIN_{0}.txt'.format(target), 'rb')
+  f = open(ROOT+'pickled_objects/X_TRAIN_{0}.txt'.format(target), 'rb')
   X_TRAIN = pickle.load(f)
   f.close()
 
-  f = open('./pickled_objects/Y_TRAIN_{0}.txt'.format(target), 'rb')
+  f = open(ROOT+'pickled_objects/Y_TRAIN_{0}.txt'.format(target), 'rb')
   Y_TRAIN = pickle.load(f)
   f.close()
   
-  f = open('./pickled_objects/X_VAL_{0}.txt'.format(target), 'rb')
+  f = open(ROOT+ 'pickled_objects/X_VAL_{0}.txt'.format(target), 'rb')
   X_VAL = pickle.load(f)
   f.close()
 
-  f = open('./pickled_objects/Y_VAL_{0}.txt'.format(target), 'rb')
+  f = open(ROOT + 'pickled_objects/Y_VAL_{0}.txt'.format(target), 'rb')
   Y_VAL = pickle.load(f)
   f.close()
 
-  f = open('./pickled_objects/x_boolmat_val_{0}.txt'.format(target), 'rb')
+  f = open(ROOT + 'pickled_objects/x_boolmat_val_{0}.txt'.format(target), 'rb')
   X_BOOLMAT_VAL = pickle.load(f)
   f.close()
 
-  f = open('./pickled_objects/y_boolmat_val_{0}.txt'.format(target), 'rb')
+  f = open(ROOT + 'pickled_objects/y_boolmat_val_{0}.txt'.format(target), 'rb')
   Y_BOOLMAT_VAL = pickle.load(f)
   f.close()
 
-  f = open('./pickled_objects/no_feature_cols_{0}.txt'.format(target), 'rb')
+  f = open(ROOT + 'pickled_objects/no_feature_cols_{0}.txt'.format(target), 'rb')
   no_feature_cols = pickle.load(f)
   f.close()
 
   X_TRAIN = X_TRAIN[0:int(n_percentage*X_TRAIN.shape[0])]
   Y_TRAIN = Y_TRAIN[0:int(n_percentage*Y_TRAIN.shape[0])]
 
+  print('building model')
+
   #build model
   model = build_model(no_feature_cols=no_feature_cols, output_summary=True, 
                       time_steps=time_steps)
 
   #init callbacks
-  tb_callback = TensorBoard(log_dir='./logs/{0}_{1}.log'.format(model_name, time),
+  tb_callback = TensorBoard(log_dir=ROOT+'logs/{0}_{1}.log'.format(model_name, time),
     histogram_freq=0,
     write_grads=False,
     write_images=True,
     write_graph=True) 
 
   #Make checkpoint dir and init checkpointer
-  checkpoint_dir = "./saved_models/{0}".format(model_name)
+  checkpoint_dir = ROOT+ "saved_models/{0}".format(model_name)
 
   if not os.path.exists(checkpoint_dir):
     os.makedirs(checkpoint_dir)
@@ -385,22 +395,22 @@ def train(model_name="kaji_mach_0", synth_data=False, target='MI',
     validation_data=(X_VAL, Y_VAL),
     shuffle=True)
 
-  model.save('./saved_models/{0}.h5'.format(model_name))
+  model.save(ROOT+'saved_models/{0}.h5'.format(model_name))
 
   if predict:
-    print('TARGET: {0}'.format(target))
+    print('TARGET: {0}, MODEL_NAME {1}'.format(target, model_name))
     Y_PRED = model.predict(X_VAL)
     Y_PRED = Y_PRED[~Y_BOOLMAT_VAL]
     np.unique(Y_PRED)
     Y_VAL = Y_VAL[~Y_BOOLMAT_VAL]
     Y_PRED_TRAIN = model.predict(X_TRAIN)
-    print('Confusion Matrix Validation')
+    print('>> Confusion Matrix Validation')
     print(confusion_matrix(Y_VAL, np.around(Y_PRED)))
-    print('Validation Accuracy')
+    print('>> Validation Accuracy')
     print(accuracy_score(Y_VAL, np.around(Y_PRED)))
-    print('ROC AUC SCORE VAL')
+    print('>> ROC AUC SCORE VAL')
     print(roc_auc_score(Y_VAL, Y_PRED))
-    print('CLASSIFICATION REPORT VAL')
+    print('>> CLASSIFICATION REPORT VAL')
     print(classification_report(Y_VAL, np.around(Y_PRED)))
 
   if return_model:
@@ -408,9 +418,10 @@ def train(model_name="kaji_mach_0", synth_data=False, target='MI',
 
 def return_loaded_model(model_name="kaji_mach_0"):
 
-  loaded_model = load_model("./saved_models/{0}.h5".format(model_name))
+  loaded_model = load_model(ROOT + "saved_models/{0}.h5".format(model_name))
 
   return loaded_model
+
 
 def pickle_objects(target='MI', time_steps=14):
 
@@ -425,77 +436,81 @@ def pickle_objects(target='MI', time_steps=14):
                          target=target, pad=True, split=True,
                          time_steps=time_steps)
 
-  f = open('./pickled_objects/X_TRAIN_{0}.txt'.format(target), 'wb')
+  f = open(ROOT + 'pickled_objects/X_TRAIN_{0}.txt'.format(target), 'wb')
   pickle.dump(X_TRAIN, f)
   f.close()
 
-  f = open('./pickled_objects/X_VAL_{0}.txt'.format(target), 'wb')
+  f = open(ROOT + 'pickled_objects/X_VAL_{0}.txt'.format(target), 'wb')
   pickle.dump(X_VAL, f)
   f.close()
 
-  f = open('./pickled_objects/Y_TRAIN_{0}.txt'.format(target), 'wb')
+  f = open(ROOT + 'pickled_objects/Y_TRAIN_{0}.txt'.format(target), 'wb')
   pickle.dump(Y_TRAIN, f)
   f.close()
 
-  f = open('./pickled_objects/Y_VAL_{0}.txt'.format(target), 'wb')
+  f = open(ROOT + 'pickled_objects/Y_VAL_{0}.txt'.format(target), 'wb')
   pickle.dump(Y_VAL, f)
   f.close()
 
-  f = open('./pickled_objects/X_TEST_{0}.txt'.format(target), 'wb')
+  f = open(ROOT + 'pickled_objects/X_TEST_{0}.txt'.format(target), 'wb')
   pickle.dump(X_TEST, f)
   f.close()
 
-  f = open('./pickled_objects/Y_TEST_{0}.txt'.format(target), 'wb')
+  f = open(ROOT + 'pickled_objects/Y_TEST_{0}.txt'.format(target), 'wb')
   pickle.dump(Y_TEST, f)
   f.close()
 
-  f = open('./pickled_objects/x_boolmat_test_{0}.txt'.format(target), 'wb')
+  f = open(ROOT + 'pickled_objects/x_boolmat_test_{0}.txt'.format(target), 'wb')
   pickle.dump(x_boolmat_test, f)
   f.close()
 
-  f = open('./pickled_objects/y_boolmat_test_{0}.txt'.format(target), 'wb')
+  f = open(ROOT + 'pickled_objects/y_boolmat_test_{0}.txt'.format(target), 'wb')
   pickle.dump(y_boolmat_test, f)
   f.close()
 
-  f = open('./pickled_objects/x_boolmat_val_{0}.txt'.format(target), 'wb')
+  f = open(ROOT + 'pickled_objects/x_boolmat_val_{0}.txt'.format(target), 'wb')
   pickle.dump(x_boolmat_val, f)
   f.close()
 
-  f = open('./pickled_objects/y_boolmat_val_{0}.txt'.format(target), 'wb')
+  f = open(ROOT + 'pickled_objects/y_boolmat_val_{0}.txt'.format(target), 'wb')
   pickle.dump(y_boolmat_val, f)
   f.close()
 
-  f = open('./pickled_objects/no_feature_cols_{0}.txt'.format(target), 'wb')
+  f = open(ROOT + 'pickled_objects/no_feature_cols_{0}.txt'.format(target), 'wb')
   pickle.dump(no_feature_cols, f)
   f.close()
 
-  f = open('./pickled_objects/features_{0}.txt'.format(target), 'wb')
+  f = open(ROOT + 'pickled_objects/features_{0}.txt'.format(target), 'wb')
   pickle.dump(features, f)
   f.close()
 
 
+
 if __name__ == "__main__":
 
+    print("Creating pickled_object file for traget MI")
     pickle_objects(target='MI', time_steps=14)#
     K.clear_session()
+    print("Creating pickled_object file for traget SEPSIS")
     pickle_objects(target='SEPSIS', time_steps=14)
     K.clear_session()
+    print("Creating pickled_object file for traget VANCOMYCIN")
     pickle_objects(target='VANCOMYCIN', time_steps=14)
 
 ## BIG THREE ##
 
     K.clear_session()
-    train(model_name='kaji_mach_final_no_mask_MI_pad14', epochs=13,
+    train(model_name='kaji_mach_final_no_mask_MI_pad14', epochs=5,
           synth_data=False, predict=True, target='MI', time_steps=14)
 
     K.clear_session()
 
-    train(model_name='kaji_mach_final_no_mask_VANCOMYCIN_pad14', epochs=14,
+    train(model_name='kaji_mach_final_no_mask_VANCOMYCIN_pad14', epochs=5,
           synth_data=False, predict=True, target='VANCOMYCIN', time_steps=14) 
 
     K.clear_session()
 
-    train(model_name='kaji_mach_final_no_mask_SEPSIS_pad14', epochs=17,
+    train(model_name='kaji_mach_final_no_mask_SEPSIS_pad14', epochs=5,
           synth_data=False, predict=True, target='SEPSIS', time_steps=14) 
 
 
@@ -503,111 +518,111 @@ if __name__ == "__main__":
 
 ## MI ##
 
-    train(model_name='kaji_mach_final_no_mask_MI_pad14_80_percent', epochs=13,
+    train(model_name='kaji_mach_final_no_mask_MI_pad14_80_percent', epochs=5,
           synth_data=False, predict=True, target='MI', time_steps=14,
           n_percentage=0.80)
   
     K.clear_session()
   
-    train(model_name='kaji_mach_final_no_mask_MI_pad14_60_percent', epochs=13,
+    train(model_name='kaji_mach_final_no_mask_MI_pad14_60_percent', epochs=5,
           synth_data=False, predict=True, target='MI', time_steps=14,
           n_percentage=0.60)
   
     K.clear_session()
   
-    train(model_name='kaji_mach_final_no_mask_MI_pad14_40_percent', epochs=13,
+    train(model_name='kaji_mach_final_no_mask_MI_pad14_40_percent', epochs=5,
           synth_data=False, predict=True, target='MI', time_steps=14,
           n_percentage=0.40)
   
     K.clear_session()
   
-    train(model_name='kaji_mach_final_no_mask_MI_pad14_20_percent', epochs=13,
+    train(model_name='kaji_mach_final_no_mask_MI_pad14_20_percent', epochs=5,
           synth_data=False, predict=True, target='MI', time_steps=14,
           n_percentage=0.20)
   
     K.clear_session()
   
-    train(model_name='kaji_mach_final_no_mask_MI_pad14_10_percent', epochs=13,
+    train(model_name='kaji_mach_final_no_mask_MI_pad14_10_percent', epochs=5,
           synth_data=False, predict=True, target='MI', time_steps=14,
           n_percentage=0.10)
   
     K.clear_session()
   
-    train(model_name='kaji_mach_final_no_mask_MI_pad14_5_percent', epochs=13,
+    train(model_name='kaji_mach_final_no_mask_MI_pad14_5_percent', epochs=5,
           synth_data=False, predict=True, target='MI', time_steps=14,
           n_percentage=0.05)
   
     K.clear_session()
   
-# SEPSIS ##
+# VANCOMYCIN ##
  
     train(model_name='kaji_mach_final_no_mask_VANCOMYCIN_pad14_80_percent',
-          epochs=14,synth_data=False, predict=True, target='VANCOMYCIN',
+          epochs=5,synth_data=False, predict=True, target='VANCOMYCIN',
           time_steps=14, n_percentage=0.80) 
   
     K.clear_session()
   
     train(model_name='kaji_mach_final_no_mask_VANCOMYCIN_pad14_60_percent',
-          epochs=14, synth_data=False, predict=True, target='VANCOMYCIN',
+          epochs=5, synth_data=False, predict=True, target='VANCOMYCIN',
           time_steps=14, n_percentage=0.60) 
   
     K.clear_session()
   
     train(model_name='kaji_mach_final_no_mask_VANCOMYCIN_pad14_40_percent',
-          epochs=14, synth_data=False, predict=True, target='VANCOMYCIN',
+          epochs=5, synth_data=False, predict=True, target='VANCOMYCIN',
           time_steps=14, n_percentage=0.40) 
   
     K.clear_session()
   
-    train(model_name='kaji_mach_final_no_mask_VANCOMYCIN_pad14_20_percent', epochs=14,
+    train(model_name='kaji_mach_final_no_mask_VANCOMYCIN_pad14_20_percent', epochs=5,
           synth_data=False, predict=True, target='VANCOMYCIN', time_steps=14,
           n_percentage=0.20) 
   
     K.clear_session()
   
     train(model_name='kaji_mach_final_no_mask_VANCOMYCIN_pad14_10_percent',
-          epochs=13, synth_data=False, predict=True, target='VANCOMYCIN',
+          epochs=5, synth_data=False, predict=True, target='VANCOMYCIN',
           time_steps=14, n_percentage=0.10)
   
     K.clear_session()
   
     train(model_name='kaji_mach_final_no_mask_VANCOMYCIN_pad14_5_percent',
-          epochs=13, synth_data=False, predict=True, target='VANCOMYCIN',
+          epochs=5, synth_data=False, predict=True, target='VANCOMYCIN',
           time_steps=14, n_percentage=0.05)
  
-# VANCOMYCIN ##
+# SEPSIS ##
  
     train(model_name='kaji_mach_final_no_mask_SEPSIS_pad14_80_percent',
-          epochs=17, synth_data=False, predict=True, target='SEPSIS',
+          epochs=5, synth_data=False, predict=True, target='SEPSIS',
           time_steps=14, n_percentage=0.80) 
   
     K.clear_session()
   
     train(model_name='kaji_mach_final_no_mask_SEPSIS_pad14_60_percent',
-          epochs=17, synth_data=False, predict=True, target='SEPSIS',
+          epochs=5, synth_data=False, predict=True, target='SEPSIS',
           time_steps=14, n_percentage=0.60) 
   
     K.clear_session()
   
     train(model_name='kaji_mach_final_no_mask_SEPSIS_pad14_40_percent',
-          epochs=17, synth_data=False, predict=True, target='SEPSIS',
+          epochs=5, synth_data=False, predict=True, target='SEPSIS',
           time_steps=14, n_percentage=0.40) 
   
     K.clear_session()
   
     train(model_name='kaji_mach_final_no_mask_SEPSIS_pad14_20_percent',
-          epochs=17, synth_data=False, predict=True, target='SEPSIS',
+          epochs=5, synth_data=False, predict=True, target='SEPSIS',
           time_steps=14, n_percentage=0.20) 
   
     K.clear_session()
   
     train(model_name='kaji_mach_final_no_mask_SEPSIS_pad14_10_percent',
-          epochs=13, synth_data=False, predict=True, target='SEPSIS',
+          epochs=5, synth_data=False, predict=True, target='SEPSIS',
           time_steps=14, n_percentage=0.10)
   
     K.clear_session()
   
     train(model_name='kaji_mach_final_no_mask_SEPSIS_pad14_5_percent',
-          epochs=13, synth_data=False, predict=True, target='SEPSIS',
+          epochs=5, synth_data=False, predict=True, target='SEPSIS',
           time_steps=14, n_percentage=0.05)
 
