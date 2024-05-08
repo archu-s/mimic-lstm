@@ -307,9 +307,42 @@ def build_model(no_feature_cols=None, time_steps=7, output_summary=False):
   return model
 
 
+def build_model_without_attention(no_feature_cols=None, time_steps=7, output_summary=False):
+
+  """
+
+  Assembles RNN with input from return_data function
+
+  Args:
+  ----
+  no_feature_cols : The number of features being used AKA matrix rank
+  time_steps : The number of days in a time block
+  output_summary : Defaults to False on returning model summary
+
+  Returns:
+  ------- 
+  Keras model object
+
+  """
+  print("time_steps:{0}|no_feature_cols:{1}".format(time_steps,no_feature_cols)) 
+  input_layer = Input(shape=(time_steps, no_feature_cols)) 
+  # x = Attention(input_layer, time_steps)
+  x = Masking(mask_value=0, input_shape=(time_steps, no_feature_cols))(input_layer) 
+  x = LSTM(256, return_sequences=True)(x)
+  preds = TimeDistributed(Dense(1, activation="sigmoid"))(x)
+  model = Model(inputs=input_layer, outputs=preds)
+  
+  RMS = optimizers.RMSprop(lr=0.001, rho=0.9, epsilon=1e-08)
+  model.compile(optimizer=RMS, loss='binary_crossentropy', metrics=['acc'])
+  
+  if output_summary:
+    model.summary()
+  return model
+
+
 def train(model_name="kaji_mach_0", synth_data=False, target='MI',
           balancer=True, predict=False, return_model=False,
-          n_percentage=1.0, time_steps=14, epochs=10):
+          n_percentage=1.0, time_steps=14, epochs=10, with_attention=True):
 
   """
 
@@ -360,8 +393,13 @@ def train(model_name="kaji_mach_0", synth_data=False, target='MI',
   print('building model')
 
   #build model
-  model = build_model(no_feature_cols=no_feature_cols, output_summary=True, 
+  if with_attention:
+    model = build_model(no_feature_cols=no_feature_cols, output_summary=True, 
                       time_steps=time_steps)
+  else:
+    model = build_model_without_attention(no_feature_cols=no_feature_cols, output_summary=True, 
+                      time_steps=time_steps)
+    model_name = model_name + '_without_attention'
 
   #init callbacks
   tb_callback = TensorBoard(log_dir=ROOT+'logs/{0}_{1}.log'.format(model_name, time),
@@ -513,6 +551,22 @@ if __name__ == "__main__":
     train(model_name='kaji_mach_final_no_mask_SEPSIS_pad14', epochs=5,
           synth_data=False, predict=True, target='SEPSIS', time_steps=14) 
 
+## BIG THREE WITHOUT ATTENTION ##
+
+    K.clear_session()
+    train(model_name='kaji_mach_final_no_mask_MI_pad14', epochs=5,
+          synth_data=False, predict=True, target='MI', time_steps=14, with_attention=False)
+
+    K.clear_session()
+
+    train(model_name='kaji_mach_final_no_mask_VANCOMYCIN_pad14', epochs=5,
+          synth_data=False, predict=True, target='VANCOMYCIN', time_steps=14, with_attention=False) 
+
+    K.clear_session()
+
+    train(model_name='kaji_mach_final_no_mask_SEPSIS_pad14', epochs=5,
+          synth_data=False, predict=True, target='SEPSIS', time_steps=14, with_attention=False) 
+
 
 ## REDUCE SAMPLE SIZES ##
 
@@ -553,6 +607,44 @@ if __name__ == "__main__":
           n_percentage=0.05)
   
     K.clear_session()
+
+## MI WITHOU ATTENTION ##
+
+    train(model_name='kaji_mach_final_no_mask_MI_pad14_80_percent', epochs=5,
+          synth_data=False, predict=True, target='MI', time_steps=14,
+          n_percentage=0.80, with_attention=False)
+  
+    K.clear_session()
+  
+    train(model_name='kaji_mach_final_no_mask_MI_pad14_60_percent', epochs=5,
+          synth_data=False, predict=True, target='MI', time_steps=14,
+          n_percentage=0.60, with_attention=False)
+  
+    K.clear_session()
+  
+    train(model_name='kaji_mach_final_no_mask_MI_pad14_40_percent', epochs=5,
+          synth_data=False, predict=True, target='MI', time_steps=14,
+          n_percentage=0.40, with_attention=False)
+  
+    K.clear_session()
+  
+    train(model_name='kaji_mach_final_no_mask_MI_pad14_20_percent', epochs=5,
+          synth_data=False, predict=True, target='MI', time_steps=14,
+          n_percentage=0.20, with_attention=False)
+  
+    K.clear_session()
+  
+    train(model_name='kaji_mach_final_no_mask_MI_pad14_10_percent', epochs=5,
+          synth_data=False, predict=True, target='MI', time_steps=14,
+          n_percentage=0.10, with_attention=False)
+  
+    K.clear_session()
+  
+    train(model_name='kaji_mach_final_no_mask_MI_pad14_5_percent', epochs=5,
+          synth_data=False, predict=True, target='MI', time_steps=14,
+          n_percentage=0.05, with_attention=False)
+  
+    K.clear_session()
   
 # VANCOMYCIN ##
  
@@ -589,6 +681,42 @@ if __name__ == "__main__":
     train(model_name='kaji_mach_final_no_mask_VANCOMYCIN_pad14_5_percent',
           epochs=5, synth_data=False, predict=True, target='VANCOMYCIN',
           time_steps=14, n_percentage=0.05)
+
+# VANCOMYCIN WITHOUT ATTENTION##
+ 
+    train(model_name='kaji_mach_final_no_mask_VANCOMYCIN_pad14_80_percent',
+          epochs=5,synth_data=False, predict=True, target='VANCOMYCIN',
+          time_steps=14, n_percentage=0.80, with_attention=False) 
+  
+    K.clear_session()
+  
+    train(model_name='kaji_mach_final_no_mask_VANCOMYCIN_pad14_60_percent',
+          epochs=5, synth_data=False, predict=True, target='VANCOMYCIN',
+          time_steps=14, n_percentage=0.60, with_attention=False) 
+  
+    K.clear_session()
+  
+    train(model_name='kaji_mach_final_no_mask_VANCOMYCIN_pad14_40_percent',
+          epochs=5, synth_data=False, predict=True, target='VANCOMYCIN',
+          time_steps=14, n_percentage=0.40, with_attention=False) 
+  
+    K.clear_session()
+  
+    train(model_name='kaji_mach_final_no_mask_VANCOMYCIN_pad14_20_percent', epochs=5,
+          synth_data=False, predict=True, target='VANCOMYCIN', time_steps=14,
+          n_percentage=0.20, with_attention=False) 
+  
+    K.clear_session()
+  
+    train(model_name='kaji_mach_final_no_mask_VANCOMYCIN_pad14_10_percent',
+          epochs=5, synth_data=False, predict=True, target='VANCOMYCIN',
+          time_steps=14, n_percentage=0.10, with_attention=False)
+  
+    K.clear_session()
+  
+    train(model_name='kaji_mach_final_no_mask_VANCOMYCIN_pad14_5_percent',
+          epochs=5, synth_data=False, predict=True, target='VANCOMYCIN',
+          time_steps=14, n_percentage=0.05, with_attention=False)
  
 # SEPSIS ##
  
@@ -626,3 +754,38 @@ if __name__ == "__main__":
           epochs=5, synth_data=False, predict=True, target='SEPSIS',
           time_steps=14, n_percentage=0.05)
 
+# SEPSIS ##
+ 
+    train(model_name='kaji_mach_final_no_mask_SEPSIS_pad14_80_percent',
+          epochs=5, synth_data=False, predict=True, target='SEPSIS',
+          time_steps=14, n_percentage=0.80, with_attention=False) 
+  
+    K.clear_session()
+  
+    train(model_name='kaji_mach_final_no_mask_SEPSIS_pad14_60_percent',
+          epochs=5, synth_data=False, predict=True, target='SEPSIS',
+          time_steps=14, n_percentage=0.60, with_attention=False) 
+  
+    K.clear_session()
+  
+    train(model_name='kaji_mach_final_no_mask_SEPSIS_pad14_40_percent',
+          epochs=5, synth_data=False, predict=True, target='SEPSIS',
+          time_steps=14, n_percentage=0.40, with_attention=False) 
+  
+    K.clear_session()
+  
+    train(model_name='kaji_mach_final_no_mask_SEPSIS_pad14_20_percent',
+          epochs=5, synth_data=False, predict=True, target='SEPSIS',
+          time_steps=14, n_percentage=0.20, with_attention=False) 
+  
+    K.clear_session()
+  
+    train(model_name='kaji_mach_final_no_mask_SEPSIS_pad14_10_percent',
+          epochs=5, synth_data=False, predict=True, target='SEPSIS',
+          time_steps=14, n_percentage=0.10, with_attention=False)
+  
+    K.clear_session()
+  
+    train(model_name='kaji_mach_final_no_mask_SEPSIS_pad14_5_percent',
+          epochs=5, synth_data=False, predict=True, target='SEPSIS',
+          time_steps=14, n_percentage=0.05, with_attention=False)
